@@ -489,6 +489,8 @@ set(buspirate_common
         pirate/irio_pio.c
         binmode/irtoy-irman.h
         binmode/irtoy-irman.c
+        binmode/uart-bridge.h
+        binmode/uart-bridge.c
 
         #toolbars
         toolbars/logic_bar.c
