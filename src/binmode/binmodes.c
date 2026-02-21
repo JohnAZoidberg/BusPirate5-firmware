@@ -34,6 +34,7 @@
 #include "binmode/irtoy-irman.h"
 #include "binmode/irtoy-air.h"
 #include "binmode/uart-bridge.h"
+#include "binmode/npcx-flasher.h"
 #include "lib/arduino-ch32v003-swio/arduino_ch32v003.h"
 #include "pirate/storage.h" // File system related
 #include "usb_rx.h"
@@ -191,6 +192,20 @@ const binmode_t binmodes[] = {
         .binmode_setup_message = uart_bridge_setup_message,
         .binmode_service = uart_bridge_service,
         .binmode_cleanup = uart_bridge_cleanup,
+    },
+    {
+        .lock_terminal = false,
+        .can_save_config = true,
+        .reset_to_hiz = true,
+        .pullup_enabled = false,
+        .button_to_exit = false,
+        .psu_en_voltage = 0,
+        .psu_en_current = 0,
+        .binmode_name = npcx_flasher_name,
+        .binmode_setup = npcx_flasher_setup,
+        .binmode_setup_message = npcx_flasher_setup_message,
+        .binmode_service = npcx_flasher_service,
+        .binmode_cleanup = npcx_flasher_cleanup,
     },
 };
 

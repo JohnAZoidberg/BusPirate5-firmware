@@ -491,6 +491,8 @@ set(buspirate_common
         binmode/irtoy-irman.c
         binmode/uart-bridge.h
         binmode/uart-bridge.c
+        binmode/npcx-flasher.h
+        binmode/npcx-flasher.c
 
         #toolbars
         toolbars/logic_bar.c
