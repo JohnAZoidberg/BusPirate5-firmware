@@ -39,8 +39,8 @@ static const struct prompt_item menu_items_led_effect[] = {
     [LED_EFFECT_PARTY_MODE    ] = {T_CONFIG_LEDS_EFFECT_CYCLE},
     // clang-format on
 };
-static_assert(count_of(menu_items_led_effect) == MAX_LED_EFFECT,
-              "menu_items_led_effect mismatch vs. enum of available effects");
+static_assert(count_of(menu_items_led_effect) == LED_EFFECT_PARTY_MODE + 1,
+              "menu_items_led_effect mismatch vs. user-selectable effects");
 
 uint32_t ui_config_action_led_effect(uint32_t a, uint32_t b) {
     if (b < count_of(menu_items_led_effect)) {

@@ -518,7 +518,7 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
         bool led_resume = bpio_ConfigurationRequest_led_resume_get(config_request);
         if (led_resume) {
             if(bpio_debug) printf("[Config Request] LED effect resumed\r\n");
-            rgb_irq_enable(true); // Enable the RGB IRQ
+            rgb_set_effect(system_config.led_effect);
         }
     }
 
@@ -537,7 +537,7 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
                 if(bpio_debug) printf("0x%06X ", colors[i]);
             }
             if(bpio_debug) printf("\r\n");
-            rgb_irq_enable(false);
+            rgb_set_effect(LED_EFFECT_HOLD);
             rgb_set_array(colors);            
         }
     }

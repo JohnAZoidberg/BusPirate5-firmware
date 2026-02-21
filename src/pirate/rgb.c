@@ -709,6 +709,25 @@ void rgb_set_effect(led_effect_t new_effect) {
 }
 
 static bool pixel_timer_callback(struct repeating_timer* t) {
+
+    // Activity LED override: connector-side LEDs show RX (green) and TX (white)
+    if (system_config.pin_activity) {
+        assign_pixel_color(PIXEL_MASK_ALL, PIXEL_COLOR_BLACK);
+        uint32_t rx_mask = (1u << (M_UART_RX + 1)) | (1u << (M_UART_RXTX + 1));
+        uint32_t tx_mask = (1u << (M_UART_TX + 1)) | (1u << (M_UART_RXTX + 1));
+        CPIXEL_COLOR rx_color = { .r = 0x00, .g = 0xFF, .b = 0x00 };
+        CPIXEL_COLOR tx_color = { .r = 0xFF, .g = 0xFF, .b = 0xFF };
+        #if BP_HW_RGB_HAS_ALL_PIXELS
+        if (system_config.pin_activity & rx_mask) pixels[4] = rx_color;  // right bottom (by connector)
+        if (system_config.pin_activity & tx_mask) pixels[5] = tx_color;  // right top (by connector)
+        #else
+        if (system_config.pin_activity & rx_mask) pixels[3] = rx_color;  // right bottom (by connector)
+        if (system_config.pin_activity & tx_mask) pixels[4] = tx_color;  // right top (by connector)
+        #endif
+        update_pixels();
+        return true;
+    }
+
     bool next = false;
 
     // clang-format off
@@ -743,6 +762,8 @@ static bool pixel_timer_callback(struct repeating_timer* t) {
         case LED_EFFECT_GENTLE_GLOW:
             next = animation_gentle_glow();
             break;
+        case LED_EFFECT_HOLD:
+            break;  // do nothing, preserve current pixel buffer (BPIO2 direct control)
         case LED_EFFECT_PARTY_MODE:
             assert(!"Party mode should never be value of the *local* variable!");
             break;
@@ -754,7 +775,7 @@ static bool pixel_timer_callback(struct repeating_timer* t) {
 
     if (rotate_effects && next) {
         static_assert(LED_EFFECT_DISABLED == 0, "LED_EFFECT_DISABLED must be zero");
-        static_assert(MAX_LED_EFFECT - 1 == LED_EFFECT_PARTY_MODE, "LED_EFFECT_PARTY_MODE must be the last effect");
+        static_assert(LED_EFFECT_PARTY_MODE + 1 == LED_EFFECT_HOLD, "LED_EFFECT_HOLD must follow LED_EFFECT_PARTY_MODE");
         ++effect;
         if (effect >= LED_EFFECT_PARTY_MODE) {
             effect = LED_EFFECT_ANGLE_WIPE;

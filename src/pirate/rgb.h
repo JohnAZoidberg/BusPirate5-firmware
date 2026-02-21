@@ -23,14 +23,15 @@ typedef enum _led_effect {
     LED_EFFECT_SCANNER = 6,        ///< Cylon/KITT scanner effect
     LED_EFFECT_GENTLE_GLOW = 7,    ///< Smooth breathing effect
 
-    LED_EFFECT_PARTY_MODE,         ///< Cycles through all effects (must be last)
+    LED_EFFECT_PARTY_MODE,         ///< Cycles through all effects (must be last before special)
+    LED_EFFECT_HOLD,               ///< Hold current pixels, skip animation (used by BPIO2)
     MAX_LED_EFFECT,                ///< Total count of effects
 } led_effect_t;
 #define DEFAULT_LED_EFFECT = LED_EFFECT_GENTLE_GLOW;
 
 static_assert(LED_EFFECT_DISABLED == 0,
               "LED_EFFECT_DISABLED must be zero"); // when used as boolean, also relied upon in party mode handling
-static_assert(MAX_LED_EFFECT - 1 == LED_EFFECT_PARTY_MODE, "LED_EFFECT_PARTY_MODE must be the last effect");
+static_assert(LED_EFFECT_PARTY_MODE + 1 == LED_EFFECT_HOLD, "LED_EFFECT_HOLD must follow LED_EFFECT_PARTY_MODE");
 
 /**
  * @brief Initialize RGB LED hardware and PIO state machine.
