@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "hardware/uart.h"
 #include "pirate.h"
+#include "system_config.h"
 #include "pirate/hwuart_pio.h"
 #include "pirate/bio.h"
 #include "bpio_uart.h"
@@ -24,6 +25,7 @@ uint32_t bpio_hwuart_transaction(struct bpio_data_request_t *request, flatbuffer
         for(uint32_t i = 0; i < request->bytes_write; i++) {
             uart_putc_raw(M_UART_PORT, flatbuffers_uint8_vec_at(data_write, i));
         }
+        system_config.pin_activity |= (1u << (M_UART_TX + 1));
     }
 
     // Receive bytes if requested
@@ -37,6 +39,7 @@ uint32_t bpio_hwuart_transaction(struct bpio_data_request_t *request, flatbuffer
             }
             data_read[i] = (uint8_t)uart_getc(M_UART_PORT);
         }
+        system_config.pin_activity |= (1u << (M_UART_RX + 1));
     }
 
     return false; // Success
@@ -69,6 +72,7 @@ uint32_t bpio_hwuart_async_handler(uint8_t *data_read) {
     while(uart_is_readable(M_UART_PORT) && bytes_read < BPIO_MAX_READ_SIZE) {
         data_read[bytes_read++] = (uint8_t)uart_getc(M_UART_PORT);
     }
-    
+
+    system_config.pin_activity |= (1u << (M_UART_RX + 1));
     return bytes_read;
 }

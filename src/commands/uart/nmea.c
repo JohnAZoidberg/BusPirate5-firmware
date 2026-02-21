@@ -47,6 +47,7 @@ void nmea_decode_handler(struct command_result* res) {
 
             if (uart_is_readable(M_UART_PORT)) {
                 uint32_t temp = uart_getc(M_UART_PORT);
+                system_config.pin_activity |= (1u << (M_UART_RX + 1));
                 if (nmea_cnt > 0 || temp == '$') {
                     line[nmea_cnt] = temp;
                     nmea_cnt++;

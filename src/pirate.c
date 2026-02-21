@@ -798,6 +798,14 @@ static void core1_infinite_loop(void) {
                 lcd_update_force = false;
                 update_flags |= UI_UPDATE_FORCE | UI_UPDATE_ALL;
             }
+            static uint32_t prev_pin_activity = 0;
+            uint32_t current_activity = system_config.pin_activity;
+            uint32_t activity_changed = current_activity ^ prev_pin_activity;
+            if (activity_changed) {
+                system_config.pin_changed |= activity_changed;
+            }
+            prev_pin_activity = current_activity;
+
             if (system_config.pin_changed) {
                 update_flags |= UI_UPDATE_LABELS; // pin labels
             }

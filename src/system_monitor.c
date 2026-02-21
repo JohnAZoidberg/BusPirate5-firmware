@@ -83,6 +83,7 @@ void monitor_reset(void) {
     voltages_update_mask[2] = 0;
     current_update_mask = 0;
     system_config.pin_changed = 0;
+    system_config.pin_activity = 0;
     system_config.info_bar_changed = false;
 }
 

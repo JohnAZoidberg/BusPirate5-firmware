@@ -45,10 +45,12 @@ void uart_bridge_handler(struct command_result* res) {
         char c;
         if (rx_fifo_try_get(&c)) {
             uart_putc_raw(M_UART_PORT, c);
+            system_config.pin_activity |= (1u << (M_UART_TX + 1));
         }
         if (uart_is_readable(M_UART_PORT)) {
             c = uart_getc(M_UART_PORT);
             tx_fifo_put(&c);
+            system_config.pin_activity |= (1u << (M_UART_RX + 1));
         }
         // exit when button pressed.
         if (button_get(0)) {

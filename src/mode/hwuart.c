@@ -319,6 +319,7 @@ void hwuart_periodic(void) {
         uint32_t temp = uart_getc(M_UART_PORT);
         if(mode_config.flow_control) bio_put(M_UART_RTS, 1);
         ui_format_print_number_2(&periodic_attributes, &temp);
+        system_config.pin_activity |= (1u << (M_UART_RX + 1));
     }
 }
 
@@ -344,12 +345,13 @@ void hwuart_close(struct _bytecode* result, struct _bytecode* next) {
     result->data_message = GET_T(T_UART_CLOSE);
 }
 
-void hwuart_write(struct _bytecode* result, struct _bytecode* next) {       
+void hwuart_write(struct _bytecode* result, struct _bytecode* next) {
     if (mode_config.blocking) {
         uart_putc_raw(M_UART_PORT, result->out_data);
     } else {
         uart_putc_raw(M_UART_PORT, result->out_data);
     }
+    system_config.pin_activity |= (1u << (M_UART_TX + 1));
 }
 
 void hwuart_read(struct _bytecode* result, struct _bytecode* next) {
@@ -367,6 +369,7 @@ void hwuart_read(struct _bytecode* result, struct _bytecode* next) {
     if(mode_config.flow_control) bio_put(M_UART_RTS, 0);
     if (uart_is_readable(M_UART_PORT)) {
         result->in_data = uart_getc(M_UART_PORT);
+        system_config.pin_activity |= (1u << (M_UART_RX + 1));
     } else {
         result->error = SERR_ERROR;
         result->error_message = GET_T(T_UART_NO_DATA_READ);

@@ -251,10 +251,13 @@ void ui_lcd_update(uint32_t update_flags) {
         uint16_t top_margin = layout.vout_top_pad;
         for (int i = 0; i < HW_PINS; i++) {
             if (system_config.pin_changed & (1u << i) || update_flags & UI_UPDATE_FORCE) {
+                const uint8_t* label_color = (system_config.pin_activity & (1u << i))
+                    ? colors_pallet[LCD_GREEN]
+                    : colors_pallet[layout.io_label_color];
                 lcd_write_labels(left_margin,
                                  top_margin,
                                  layout.font_default,
-                                 colors_pallet[layout.io_label_color],
+                                 label_color,
                                  system_config.pin_labels[i] == 0 ? "-" : (char*)system_config.pin_labels[i],
                                  layout.io_col_width_chars);
             }

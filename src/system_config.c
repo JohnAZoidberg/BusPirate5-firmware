@@ -101,6 +101,7 @@ void system_init(void) {
     }
 
     system_config.pin_changed = 0xffffffff;
+    system_config.pin_activity = 0;
     system_config.info_bar_changed = 0;
 
     system_config.num_bits = 8;

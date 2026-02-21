@@ -58,6 +58,7 @@ void hduart_bridge_handler(struct command_result* res) {
         bio_put(BIO2, !system_config.rts);
         if (rx_fifo_try_get(&c)) {
             hwuart_pio_write(c);
+            system_config.pin_activity |= (1u << (M_UART_RXTX + 1));
             if (!suppress_local_echo) {
                 tx_fifo_put(&c);
             }
@@ -65,6 +66,7 @@ void hduart_bridge_handler(struct command_result* res) {
         if (hwuart_pio_read(&raw, &cooked)) {
             char c = (char)cooked;
             tx_fifo_put(&c);
+            system_config.pin_activity |= (1u << (M_UART_RXTX + 1));
         }
         // exit when button pressed.
         if (button_get(0)) {

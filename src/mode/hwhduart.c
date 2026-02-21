@@ -194,6 +194,7 @@ void hwhduart_periodic(void) {
         // printf("PIO: 0x%04X ", raw);
         printf("0x%02x ", cooked);
         // ui_format_print_number_2(&periodic_attributes,  &cooked);
+        system_config.pin_activity |= (1u << (M_UART_RXTX + 1));
     }
 }
 
@@ -233,6 +234,7 @@ void hwhduart_write(struct _bytecode* result, struct _bytecode* next) {
         // uart_putc_raw(M_UART_PORT, result->out_data);
     }
     hwuart_pio_write(result->out_data);
+    system_config.pin_activity |= (1u << (M_UART_RXTX + 1));
 }
 
 void hwhduart_read(struct _bytecode* result, struct _bytecode* next) {
@@ -249,6 +251,7 @@ void hwhduart_read(struct _bytecode* result, struct _bytecode* next) {
         }
     }
     result->in_data = cooked;
+    system_config.pin_activity |= (1u << (M_UART_RXTX + 1));
 }
 
 void hwhduart_macro(uint32_t macro) {
