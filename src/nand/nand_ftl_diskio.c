@@ -41,6 +41,9 @@ DSTATUS diskio_initialize(BYTE drv) {
         // printf("spi_nand_init failed, status: %d.", ret);
         return STA_NOINIT;
     }
+    // NAND NUKE: erase all blocks to recover from corrupted FTL.
+    // Remove this after one successful boot!
+    spi_nand_clear();
     // init flash translation layer
     dhara_map_init(&map, &dhara_nand_parameters, page_buffer, 4);
     dhara_error_t err = DHARA_E_NONE;
