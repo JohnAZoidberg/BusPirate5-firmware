@@ -25,6 +25,8 @@ uint32_t bpio_hwuart_transaction(struct bpio_data_request_t *request, flatbuffer
         for(uint32_t i = 0; i < request->bytes_write; i++) {
             uart_putc_raw(M_UART_PORT, flatbuffers_uint8_vec_at(data_write, i));
         }
+        // Wait for TX to complete before reading response
+        uart_tx_wait_blocking(M_UART_PORT);
         system_config.pin_activity |= (1u << (M_UART_TX + 1));
     }
 
