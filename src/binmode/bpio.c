@@ -387,6 +387,8 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
         mode_config_data.submode = bpio_ModeConfiguration_submode_get(mode_config);
         mode_config_data.tx_modulation = bpio_ModeConfiguration_tx_modulation_get(mode_config);
         mode_config_data.rx_sensor = bpio_ModeConfiguration_rx_sensor_get(mode_config);
+        mode_config_data.pin_tx = bpio_ModeConfiguration_pin_tx_get(mode_config);
+        mode_config_data.pin_rx = bpio_ModeConfiguration_pin_rx_get(mode_config);
         mode_config_data.debug = bpio_debug;
         
         if (mode_change_new(mode_str, &mode_config_data)) {
