@@ -1,4 +1,5 @@
 /**
+ * Modified by OpenAI, 2026: buffered RX lifecycle and errors.
  * @file bpio_uart.h
  * @brief BPIO UART protocol transaction handler.
  * @details Provides binary protocol UART transaction and async handling.
@@ -29,5 +30,11 @@ uint32_t bpio_hwuart_transaction(struct bpio_data_request_t *request, flatbuffer
  * @return           Number of bytes received
  */
 uint32_t bpio_hwuart_async_handler(uint8_t *data_read);
+
+// BPIO mode owns RX until hardware UART cleanup. Faults latch until start.
+void bpio_hwuart_rx_start(void);
+void bpio_hwuart_rx_stop(void);
+const char *bpio_hwuart_rx_error(void);
+const char *bpio_hwuart_rx_async_error(void);
 
 #endif // BPIO_UART_H
