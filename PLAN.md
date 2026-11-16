@@ -82,11 +82,16 @@ down the SoC console until it is changed.
     cross-channel data, no faults;
   - closing/reopening the EC PTY and disabling EC TX left the SoC working;
   - repeated on the committed build: device reports `3783b18`.
+  - power cycle: EC reset via IO3 (active low, 0.5 s; IO7 untouched), then
+    `powerbtn` on the EC console. Separate logs captured the EC from
+    `*** Booting Zephyr OS` (reset cause: reset-pin) through G3→S5→S0 and the
+    SoC from the coreboot bootblock banner to `nixos login:` (~56 s). Each
+    channel latched one break/framing fault as its line dropped and recovered
+    automatically; PSU and pull-ups stayed off. Logs:
+    `/tmp/bp-powercycle-20261116-150718/{ec,soc}.raw`.
 
 ## Open items
 
-- Capture separately identified EC and SoC boot logs across a target power
-  cycle (exercises fault recovery while the reference voltage is absent).
 - Legacy single-UART path is covered by unit tests only on this build.
 - `ectarget._PtyBridge` leaves its PTY slave in cooked/echo mode, so target
   output is echoed back to the target until a terminal sets raw mode (fixed in
