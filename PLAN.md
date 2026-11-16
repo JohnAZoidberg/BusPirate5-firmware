@@ -92,6 +92,9 @@ down the SoC console until it is changed.
 
 ## Open items
 
+- Address the four implementation review findings below. RX-fix integration
+  is planned separately in `PLAN-uart-integration.md`; it does not resolve all
+  four findings by itself.
 - Legacy single-UART path is covered by unit tests only on this build.
 - `ectarget._PtyBridge` leaves its PTY slave in cooked/echo mode, so target
   output is echoed back to the target until a terminal sets raw mode (fixed in
@@ -100,3 +103,47 @@ down the SoC console until it is changed.
 - Move `EcTarget` mode re-entry to `uart_channels` channel 0 reconfiguration.
 - Upstreaming the BPIO submodule change needs a fork of
   `DangerousPrototypes/BusPirate-BPIO2-flatbuffer-interface`.
+
+## Implementation review findings (2026-11-16)
+
+These remain open. Review validation: the Nix build and existing C UART tests
+passed; the Python configuration race was reproduced with a mocked bus. No
+hardware configuration was changed during the review.
+
+1. **P1: blocking requests can overflow the other channel.**
+   `src/binmode/bpio_uart.c`, `bpio_hwuart_channel_transaction()` still uses
+   blocking writes and a one-second idle read timeout. A 512-byte write at
+   9600 baud takes roughly half a second; an idle read can block for a second.
+   The other channel's 4095-byte ring fills in about 356 ms at 115200 8N1.
+   Interrupt buffering alone cannot prevent this loss. Make transactions
+   cooperative so both channels continue draining to the host; bound service
+   latency and preserve legacy request/response semantics. Add tests with a
+   silent read or slow TX on one channel and sustained RX on the other, rather
+   than testing only round-robin async packet selection.
+
+2. **P2: recovery can undo a TX-disable request.**
+   `frameworkdebugger-library/scripts/bpconsoles.py`, `UartChannel.configure()`
+   reads and updates `self.config` outside the BPIO transport lock. Recovery
+   can capture the previous `tx_enable=True`, reapply it after disable, and
+   leave firmware TX enabled while the cached state says disabled. Serialize
+   the complete read/configure/cache-update operation, including recovery.
+   Add a deterministic concurrent disable/recovery test and assert that both
+   the applied and cached configurations agree.
+
+3. **P2: channel 0 misses debug-UART ownership rejection.**
+   `src/binmode/bpio.c`, `mode_change_new()` checks terminal UART ownership
+   but omits debug UART ownership for UART0. Channel 1 checks both. Reject
+   conflicts before changing hardware and return the specific reason. The
+   `29a771b` RX-fix branch contains this guard; preserve it during integration
+   and test both terminal/debug ownership on both peripherals.
+
+4. **P2: initialization failure leaves partial configuration active.**
+   `frameworkdebugger-library/scripts/bpconsoles.py`,
+   `BusPirateConsoles.__init__()` closes only the host port on failure.
+   Firmware applies channel entries sequentially: if EC configuration succeeds
+   with TX enabled and SoC configuration then fails, EC TX can remain driven
+   after the constructor raises. Once hardware configuration has begun,
+   attempt HiZ cleanup before closing the transport, preserving PSU/pull-up
+   state and the original exception. Do not alter hardware for a capability
+   rejection before configuration starts. Test a failure on the second channel
+   and a cleanup failure, checking resource release and error reporting.
