@@ -206,6 +206,7 @@ typedef struct {
     uint8_t submode;             // Submode for LED and INFRARED modes (e.g., "RGB", "IR TX", "IR RX")
     uint8_t tx_modulation;       // TX modulation for INFRARED mode (true for enabled, false for disabled)
     uint8_t rx_sensor;           // RX sensor for INFRARED mode (true for enabled, false for disabled)
+    bool uart_tx_disable;        // UART: leave TX buffer as input on mode entry (BPIO uart_channels)
 } bpio_mode_configuration_t;
 
 #endif

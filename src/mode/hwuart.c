@@ -1,5 +1,6 @@
 /**
  * Modified by OpenAI, 2026: stop BPIO RX before UART teardown.
+ * Modified by Daniel Schaefer and Claude, 2026: BPIO channel 0 TX enable and reconfiguration.
  * @file hwuart.c
  * @brief Hardware UART mode implementation.
  * @details Implements UART (serial) protocol using PIO-based full-duplex communication.
@@ -48,6 +49,12 @@
 
 static struct _uart_mode_config mode_config;
 static struct command_attributes periodic_attributes;
+// BPIO uart_channels can leave TX as a buffered input (receive only).
+static bool tx_disabled;
+
+bool hwuart_tx_enabled(void) {
+    return !tx_disabled;
+}
 
 bool bpio_hwuart_configure(bpio_mode_configuration_t *bpio_mode_config){
     if(bpio_mode_config->debug) printf("[UART] Configuring - Speed %d baud, %d%c%d\r\n", 
@@ -64,6 +71,7 @@ bool bpio_hwuart_configure(bpio_mode_configuration_t *bpio_mode_config){
     mode_config.invert = bpio_mode_config->signal_inversion ? 1 : 0;
     mode_config.async_print = false; // Disabled by default, async data handled via BPIO packets
     mode_config.blocking = 0; // Non-blocking
+    tx_disabled = bpio_mode_config->uart_tx_disable;
     
     return true;  
 }
@@ -181,6 +189,7 @@ const bp_command_def_t uart_setup_def = {
 };
 
 uint32_t hwuart_setup(void) {
+    tx_disabled = false;
     uint32_t temp;
     periodic_attributes.has_value = true;
     periodic_attributes.has_dot = false;
@@ -286,11 +295,18 @@ uint32_t hwuart_setup_exc(void) {
     // setup peripheral
     uart_set_format(M_UART_PORT, mode_config.data_bits, mode_config.stop_bits, mode_config.parity);
     // set buffers to correct position
-    bio_buf_output(M_UART_TX); // tx
     bio_buf_input(M_UART_RX);  // rx
     // assign peripheral to io pins
-    bio_set_function(M_UART_TX, GPIO_FUNC_UART); // tx
     bio_set_function(M_UART_RX, GPIO_FUNC_UART); // rx
+    if (tx_disabled) {
+        // receive only: never drive the target's RX line
+        bio_input(M_UART_TX);
+        bio_set_function(M_UART_TX, GPIO_FUNC_SIO);
+    } else {
+        // the UART drives idle on the MCU side before the buffer turns around
+        bio_set_function(M_UART_TX, GPIO_FUNC_UART); // tx
+        bio_buf_output(M_UART_TX); // tx
+    }
     system_bio_update_purpose_and_label(true, M_UART_TX, BP_PIN_MODE, pin_labels[0]);
     system_bio_update_purpose_and_label(true, M_UART_RX, BP_PIN_MODE, pin_labels[1]);
 
@@ -408,8 +424,35 @@ void hwuart_macro(uint32_t macro) {
     }
 }
 
+// Reconfigure channel 0 in place for BPIO uart_channels. Unlike a mode change
+// this leaves every other pin (including BPIO channel 1) untouched.
+void hwuart_bpio_channel0_apply(const bpio_uart_channel_config_t *cfg) {
+    // Undrive TX first, and drop any flow control from a previous mode entry.
+    bio_input(M_UART_TX);
+    bio_set_function(M_UART_TX, GPIO_FUNC_SIO);
+    if (mode_config.flow_control) {
+        uart_set_hw_flow(M_UART_PORT, false, false);
+        bio_input(M_UART_RTS);
+        bio_set_function(M_UART_RTS, GPIO_FUNC_SIO);
+        bio_set_function(M_UART_CTS, GPIO_FUNC_SIO);
+        gpio_set_inover(bio2bufiopin[M_UART_CTS], GPIO_OVERRIDE_NORMAL);
+        gpio_set_outover(bio2bufiopin[M_UART_RTS], GPIO_OVERRIDE_NORMAL);
+        system_bio_update_purpose_and_label(false, M_UART_RTS, BP_PIN_MODE, 0);
+        system_bio_update_purpose_and_label(false, M_UART_CTS, BP_PIN_MODE, 0);
+    }
+    mode_config.baudrate = cfg->speed;
+    mode_config.data_bits = cfg->data_bits;
+    mode_config.stop_bits = cfg->stop_bits;
+    mode_config.parity = cfg->parity ? UART_PARITY_EVEN : UART_PARITY_NONE;
+    mode_config.flow_control = 0;
+    mode_config.invert = cfg->invert ? 1 : 0;
+    tx_disabled = !cfg->tx_enable;
+    hwuart_setup_exc();
+}
+
 void hwuart_cleanup(void) {
-    bpio_hwuart_rx_stop();
+    // releases BPIO channel 1 and stops channel 0 RX
+    bpio_hwuart_channels_release();
     // disable peripheral
     uart_deinit(M_UART_PORT);
     system_bio_update_purpose_and_label(false, M_UART_TX, BP_PIN_MODE, 0);
