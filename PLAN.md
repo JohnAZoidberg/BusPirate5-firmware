@@ -80,13 +80,18 @@ down the SoC console until it is changed.
     near line rate;
   - EC command answered during the SoC burst, burst still intact, no
     cross-channel data, no faults;
-  - closing/reopening the EC PTY and disabling EC TX left the SoC working.
+  - closing/reopening the EC PTY and disabling EC TX left the SoC working;
+  - repeated on the committed build: device reports `3783b18`.
 
 ## Open items
 
 - Capture separately identified EC and SoC boot logs across a target power
   cycle (exercises fault recovery while the reference voltage is absent).
 - Legacy single-UART path is covered by unit tests only on this build.
+- `ectarget._PtyBridge` leaves its PTY slave in cooked/echo mode, so target
+  output is echoed back to the target until a terminal sets raw mode (fixed in
+  `bpconsoles.py` with `tty.setraw(slave, TCSANOW)`; `EcTarget.pty_bridge()`
+  still has it).
 - Move `EcTarget` mode re-entry to `uart_channels` channel 0 reconfiguration.
 - Upstreaming the BPIO submodule change needs a fork of
   `DangerousPrototypes/BusPirate-BPIO2-flatbuffer-interface`.
