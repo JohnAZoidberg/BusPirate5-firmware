@@ -42,11 +42,26 @@ static void __not_in_flash_func(bpio_uart_rx_irq)(void) {
     while (uart_is_readable(M_UART_PORT)) {
         uint32_t dr = uart_get_hw(M_UART_PORT)->dr;
         // PL011 DR[11:8] = overrun, break, parity, framing errors.
-        if (dr & (1u << 11)) rx_overrun++;
-        if (dr & (1u << 10)) rx_break++;
-        if (dr & (1u << 9)) rx_parity++;
-        if (dr & (1u << 8)) rx_framing++;
-        if (dr & 0xf00u) rx_fault = true;
+        if (dr & (1u << 11)) {
+            rx_overrun++;
+            rx_fault = true;
+        }
+        if (dr & (1u << 10)) {
+            // A break is a line condition, not corruption: targets are put into
+            // programming mode by deliberately holding the line low. The PL011
+            // loads a single 0x00 with BE (and usually FE/PE) set; count it and
+            // drop that character without latching a fault.
+            rx_break++;
+            continue;
+        }
+        if (dr & (1u << 9)) {
+            rx_parity++;
+            rx_fault = true;
+        }
+        if (dr & (1u << 8)) {
+            rx_framing++;
+            rx_fault = true;
+        }
         uint32_t next = (rx_head + 1u) & RX_RING_MASK;
         if (next == rx_tail) {
             rx_overflow++;

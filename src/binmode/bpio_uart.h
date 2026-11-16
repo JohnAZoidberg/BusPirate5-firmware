@@ -33,7 +33,9 @@ uint32_t bpio_hwuart_async_handler(uint8_t *data_read);
 
 // BPIO starts IRQ RX on its first UART request and owns it until
 // bpio_hwuart_rx_stop() (UART cleanup, BPIO binmode cleanup, or another RX
-// consumer taking the peripheral). Faults latch until the next start.
+// consumer taking the peripheral). Overrun, parity, framing (without break)
+// and ring overflow latch a fault until the next start. Breaks are counted
+// and their 0x00 character dropped, but do not latch.
 void bpio_hwuart_rx_start(void);
 void bpio_hwuart_rx_stop(void);
 bool bpio_hwuart_rx_active(void);

@@ -55,9 +55,31 @@ int main(void) {
     bpio_hwuart_rx_start(); // configuration clears stream and counters
     assert(!bpio_hwuart_rx_error());
     assert(bpio_hwuart_async_handler(rx)==0);
-    inject(0xf00u | 42);
+    // Break (deliberate low pulse, e.g. EC programming entry): the 0x00 break
+    // character arrives with BE plus FE/PE. It is dropped, not latched, and
+    // the stream keeps flowing.
+    inject(0x700u);
+    inject(0x500u);
+    assert(!bpio_hwuart_rx_error());
+    inject(42);
+    assert(bpio_hwuart_async_handler(rx)==1 && rx[0]==42);
+    request.bytes_write=1; request.bytes_read=1;
+    assert(!bpio_hwuart_transaction(&request,tx,rx) && rx[0]==tx[0]);
+    request.bytes_write=0;
+    // Framing error without break still latches; the error text includes the
+    // breaks seen so far.
+    inject(0x100u | 1);
     const char *error=bpio_hwuart_rx_error();
-    assert(error && strstr(error,"overrun=1 framing=1 parity=1 break=1"));
+    assert(error && strstr(error,"overrun=0 framing=1 parity=0 break=2"));
+    assert(bpio_hwuart_async_handler(rx)==0);
+    bpio_hwuart_rx_start();
+    inject(0x200u | 1); // parity
+    error=bpio_hwuart_rx_error();
+    assert(error && strstr(error,"overrun=0 framing=0 parity=1 break=0"));
+    bpio_hwuart_rx_start();
+    inject(0xf00u); // overrun is fatal even when it coincides with a break
+    error=bpio_hwuart_rx_error();
+    assert(error && strstr(error,"overrun=1 framing=0 parity=0 break=1"));
     assert(bpio_hwuart_async_handler(rx)==0);
     bpio_hwuart_rx_stop();
     bpio_hwuart_rx_stop(); // idempotent cleanup
