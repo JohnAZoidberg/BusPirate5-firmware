@@ -18,6 +18,8 @@
 
 // #include <stdio.h>
 #include <string.h>
+#include "hardware/uart.h"
+// Modified by OpenAI, 2026: BPIO UART RX lifecycle and fault reporting.
 #include "pico/stdlib.h"
 #include "pirate.h"
 #include "usb_rx.h"
@@ -156,6 +158,9 @@ bool mode_change_new(const char *mode_name, bpio_mode_configuration_t *mode_conf
                 if(bpio_debug) printf("[Mode Change] Protocol %s does not support BPIO handler\r\n", mode_name);
                 return true;
             }
+            // Debug UART RX runs on the other core; never share its peripheral.
+            if (i == HWUART && system_config.terminal_uart_enable &&
+                system_config.terminal_uart_number == uart_get_index(M_UART_PORT)) return true;
             modes[system_config.mode].protocol_cleanup();
             system_config.mode = i;
             if(bpio_mode_handlers[system_config.mode].bpio_configure==NULL) {
@@ -164,6 +169,7 @@ bool mode_change_new(const char *mode_name, bpio_mode_configuration_t *mode_conf
                 bpio_mode_handlers[system_config.mode].bpio_configure(mode_config);
             }
             modes[system_config.mode].protocol_setup_exc();
+            if (system_config.mode == HWUART) bpio_hwuart_rx_start();
             return false;
         }
     }
@@ -676,7 +682,8 @@ uint32_t data_request(bpio_RequestPacket_table_t packet, flatcc_builder_t *B, ui
         bpio_DataResponse_data_read_truncate(B, 0); 
         static const char* request_error_msg = "Protocol request failed";
         if(bpio_debug) printf("[Data Request] %s\r\n", request_error_msg);
-        error = request_error_msg;
+        error = (system_config.mode == HWUART) ? bpio_hwuart_rx_error() : NULL;
+        if (!error) error = request_error_msg;
     }
     bpio_DataResponse_data_read_end(B); // End the data read vector
         
@@ -725,7 +732,9 @@ void bpio_check_async_data(flatcc_builder_t *B, uint8_t *buf) {
     // Call mode's async handler to check for data
     uint32_t bytes_read = bpio_mode_handlers[system_config.mode].bpio_async_handler(async_data);
     
-    if(bytes_read == 0) {
+    const char *uart_error = (system_config.mode == HWUART) ? bpio_hwuart_rx_async_error() : NULL;
+    if (uart_error) bytes_read = 0;
+    if(bytes_read == 0 && !uart_error) {
         return; // No async data available
     }
 
@@ -749,6 +758,10 @@ void bpio_check_async_data(flatcc_builder_t *B, uint8_t *buf) {
     memcpy(data_read_buf, async_data, bytes_read);
     bpio_DataResponse_data_read_end(B);
     
+    if (uart_error) {
+        bpio_DataResponse_error_add(B, flatbuffers_string_create_str(B, uart_error));
+    }
+
     // Mark as async (unsolicited) data
     bpio_DataResponse_is_async_add(B, true);
     

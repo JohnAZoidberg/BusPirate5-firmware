@@ -1,4 +1,5 @@
 /**
+ * Modified by OpenAI, 2026: stop BPIO RX before UART teardown.
  * @file hwuart.c
  * @brief Hardware UART mode implementation.
  * @details Implements UART (serial) protocol using PIO-based full-duplex communication.
@@ -26,6 +27,7 @@
 #include "pico/stdlib.h"
 #include <stdint.h>
 #include "hardware/uart.h"
+#include "binmode/bpio_uart.h"
 #include "pirate.h"
 #include "system_config.h"
 #include "command_struct.h"
@@ -407,6 +409,7 @@ void hwuart_macro(uint32_t macro) {
 }
 
 void hwuart_cleanup(void) {
+    bpio_hwuart_rx_stop();
     // disable peripheral
     uart_deinit(M_UART_PORT);
     system_bio_update_purpose_and_label(false, M_UART_TX, BP_PIN_MODE, 0);
