@@ -331,23 +331,42 @@ bool hwuart_preflight_sanity_check(void){
     return ui_help_sanity_check(true, 0x00);
 }
 
+bool hwuart_flow_control_enabled(void) {
+    return mode_config.flow_control;
+}
+
+// Non-blocking receive for the terminal paths. While BPIO owns RX its IRQ
+// empties the hardware FIFO, so read from its ring (which also manages RTS).
+static bool hwuart_rx_try_get(uint32_t* c) {
+    if (bpio_hwuart_rx_active()) {
+        uint8_t b;
+        if (!bpio_hwuart_rx_read(&b, 1)) {
+            return false;
+        }
+        *c = b;
+        return true;
+    }
+    if (!uart_is_readable(M_UART_PORT)) {
+        return false;
+    }
+    if (mode_config.flow_control) bio_put(M_UART_RTS, 0);
+    *c = uart_getc(M_UART_PORT);
+    if (mode_config.flow_control) bio_put(M_UART_RTS, 1);
+    return true;
+}
+
 void hwuart_periodic(void) {
-    if (mode_config.async_print && uart_is_readable(M_UART_PORT)) {
-        // printf("ASYNC: %d\r\n", uart_getc(M_UART_PORT));
-        if(mode_config.flow_control) bio_put(M_UART_RTS, 0);
-        uint32_t temp = uart_getc(M_UART_PORT);
-        if(mode_config.flow_control) bio_put(M_UART_RTS, 1);
+    uint32_t temp;
+    if (mode_config.async_print && hwuart_rx_try_get(&temp)) {
         ui_format_print_number_2(&periodic_attributes, &temp);
     }
 }
 
 void hwuart_open(struct _bytecode* result, struct _bytecode* next) {    
     // clear FIFO and enable UART
-    if(mode_config.flow_control) bio_put(M_UART_RTS, 0);
-    while (uart_is_readable(M_UART_PORT)) {
-        uart_getc(M_UART_PORT);
+    uint32_t discard;
+    while (hwuart_rx_try_get(&discard)) {
     }
-    if(mode_config.flow_control) bio_put(M_UART_RTS, 1);
 
     mode_config.async_print = false;
     result->data_message = GET_T(T_UART_OPEN);
@@ -373,8 +392,9 @@ void hwuart_write(struct _bytecode* result, struct _bytecode* next) {
 
 void hwuart_read(struct _bytecode* result, struct _bytecode* next) {
     uint32_t timeout = 0xfff;
+    uint32_t c;
 
-    while (!uart_is_readable(M_UART_PORT)) {
+    while (!hwuart_rx_try_get(&c)) {
         timeout--;
         if (!timeout) {
             result->error = SERR_ERROR;
@@ -382,15 +402,7 @@ void hwuart_read(struct _bytecode* result, struct _bytecode* next) {
             return;
         }
     }
-
-    if(mode_config.flow_control) bio_put(M_UART_RTS, 0);
-    if (uart_is_readable(M_UART_PORT)) {
-        result->in_data = uart_getc(M_UART_PORT);
-    } else {
-        result->error = SERR_ERROR;
-        result->error_message = GET_T(T_UART_NO_DATA_READ);
-    }
-    if(mode_config.flow_control) bio_put(M_UART_RTS, 1);
+    result->in_data = c;
 }
 
 void hwuart_macro(uint32_t macro) {

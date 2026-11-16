@@ -8,3 +8,4 @@ src/translation/history/new__en-us.json
 tools/__pycache__/
 
 result
+tests/test_bpio_uart

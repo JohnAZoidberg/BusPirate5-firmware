@@ -23,3 +23,8 @@ bool mode_change_new(const char *mode_name, bpio_mode_configuration_t *mode_conf
  * @brief Setup BPIO mode.
  */
 void dirtyproto_mode_setup(void);
+
+/**
+ * @brief Cleanup BPIO mode (releases BPIO-owned UART RX).
+ */
+void dirtyproto_mode_cleanup(void);

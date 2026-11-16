@@ -111,7 +111,7 @@ const binmode_t binmodes[] = {
         .binmode_name = dirtyproto_mode_name,
         .binmode_setup = dirtyproto_mode_setup,
         .binmode_service = dirtyproto_mode,
-        .binmode_cleanup = binmode_null_func_void,
+        .binmode_cleanup = dirtyproto_mode_cleanup,
     },
     {
         .lock_terminal = true,

@@ -11,6 +11,7 @@
 #include "lib/bp_args/bp_cmd.h"
 #include "bytecode.h"
 #include "mode/hwuart.h"
+#include "binmode/bpio_uart.h"
 #include "pirate/button.h"
 #include "usb_rx.h"
 #include "usb_tx.h"
@@ -52,6 +53,8 @@ void uart_bridge_handler(struct command_result* res) {
     }
 
     printf("%s%s%s\r\n", ui_term_color_notice(), GET_T(T_HELP_UART_BRIDGE_EXIT), ui_term_color_reset());
+    // The bridge reads the hardware FIFO directly; take RX back from BPIO.
+    bpio_hwuart_rx_stop();
     bio_put(M_UART_RTS, 0);
     while (true) {
         char c;

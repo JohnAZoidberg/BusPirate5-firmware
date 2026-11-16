@@ -143,7 +143,23 @@ static const struct bpio_mode_handlers_t bpio_mode_handlers[count_of(modes)] = {
 
 void error_response(const char *error_msg, flatcc_builder_t *B, uint8_t *buf);
 
+// Reason for the last mode_change_new() failure, reported to the BPIO host.
+static const char *mode_change_error;
+
+// Debug UART RX runs on the other core; never share its peripheral.
+static const char *hwuart_peripheral_conflict(void) {
+    uint32_t index = uart_get_index(M_UART_PORT);
+    if (system_config.terminal_uart_enable && system_config.terminal_uart_number == index) {
+        return "UART peripheral is in use by the terminal UART";
+    }
+    if (system_config.debug_uart_enable && system_config.debug_uart_number == index) {
+        return "UART peripheral is in use by the debug UART";
+    }
+    return NULL;
+}
+
 bool mode_change_new(const char *mode_name, bpio_mode_configuration_t *mode_config) {
+    mode_change_error = "Invalid mode name";
     // compare mode name to modes.protocol_name
     for (uint8_t i = 0; i < count_of(modes); i++) {
         if (strcasecmp(mode_name, modes[i].protocol_name) == 0) {
@@ -156,11 +172,14 @@ bool mode_change_new(const char *mode_name, bpio_mode_configuration_t *mode_conf
             }
             else*/ if(bpio_mode_handlers[i].bpio_handler==NULL) {
                 if(bpio_debug) printf("[Mode Change] Protocol %s does not support BPIO handler\r\n", mode_name);
+                mode_change_error = "Mode not supported by BPIO";
                 return true;
             }
-            // Debug UART RX runs on the other core; never share its peripheral.
-            if (i == HWUART && system_config.terminal_uart_enable &&
-                system_config.terminal_uart_number == uart_get_index(M_UART_PORT)) return true;
+            const char *conflict = (i == HWUART) ? hwuart_peripheral_conflict() : NULL;
+            if (conflict) {
+                mode_change_error = conflict;
+                return true;
+            }
             modes[system_config.mode].protocol_cleanup();
             system_config.mode = i;
             if(bpio_mode_handlers[system_config.mode].bpio_configure==NULL) {
@@ -169,7 +188,8 @@ bool mode_change_new(const char *mode_name, bpio_mode_configuration_t *mode_conf
                 bpio_mode_handlers[system_config.mode].bpio_configure(mode_config);
             }
             modes[system_config.mode].protocol_setup_exc();
-            if (system_config.mode == HWUART) bpio_hwuart_rx_start();
+            // HWUART RX starts on the first BPIO UART request (see bpio_uart.c).
+            mode_change_error = NULL;
             return false;
         }
     }
@@ -396,9 +416,8 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
         mode_config_data.debug = bpio_debug;
         
         if (mode_change_new(mode_str, &mode_config_data)) {
-            static const char *mode_error_msg = "Invalid mode name";
-            if(bpio_debug) printf("[Config Request] Error: %s '%s'\r\n", mode_error_msg, mode_str);
-            error = mode_error_msg;
+            if(bpio_debug) printf("[Config Request] Error: %s '%s'\r\n", mode_change_error, mode_str);
+            error = mode_change_error;
             goto config_response_error;
         }
         //todo: configure mode
@@ -722,10 +741,14 @@ void bpio_check_async_data(flatcc_builder_t *B, uint8_t *buf) {
     // Call mode's async handler to check for data
     uint32_t bytes_read = bpio_mode_handlers[system_config.mode].bpio_async_handler(async_data);
     
-    const char *uart_error = (system_config.mode == HWUART) ? bpio_hwuart_rx_async_error() : NULL;
-    if (uart_error) bytes_read = 0;
-    if(bytes_read == 0 && !uart_error) {
-        return; // No async data available
+    // Deliver bytes drained before any fault first; the ring refuses data once
+    // faulted, so the next poll returns 0 and reports the fault then.
+    const char *uart_error = NULL;
+    if (bytes_read == 0) {
+        uart_error = (system_config.mode == HWUART) ? bpio_hwuart_rx_async_error() : NULL;
+        if (!uart_error) {
+            return; // No async data available
+        }
     }
 
     if(bpio_debug){
@@ -793,6 +816,11 @@ void dirtyproto_mode_setup(void) {
     system_config.binmode_usb_rx_queue_enable = false;
     system_config.binmode_usb_tx_queue_enable = false;   
     #endif 
+}
+
+void dirtyproto_mode_cleanup(void) {
+    // Leaving BPIO: return UART RX to the terminal paths.
+    bpio_hwuart_rx_stop();
 }
 
 // handler needs to be cooperative multitasking until mode is enabled

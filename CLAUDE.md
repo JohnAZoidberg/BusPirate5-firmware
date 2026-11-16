@@ -34,6 +34,7 @@ docker compose run dev build-clean
 
 ```bash
 cd tests && ./test_spsc_queue.sh
+./test_bpio_uart.sh       # BPIO UART IRQ ring (mocks in tests/bpio_uart_stubs/)
 ```
 
 Test stubs for hardware headers are in `tests/stubs/`.
