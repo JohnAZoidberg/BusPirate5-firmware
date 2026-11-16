@@ -38,6 +38,7 @@ table StatusResponse {
   disk_size_mb:float; // Size of the disk in megabytes.
   disk_used_mb:float; // Used space on the disk in megabytes.
   led_count:uint8; // Number of LEDs.
+  uart_channel_count:uint8; // NEW in 2.3: independent UART channels (0/absent = single legacy UART).
 }
 
 table ModeConfiguration {
@@ -67,6 +68,21 @@ table ModeConfiguration {
   rx_sensor:uint8; // RX sensor for INFRARED mode 
 }
 
+// NEW in 2.3: independent hardware UART channel configuration (UART mode only).
+// Channel 0 is the legacy mode UART (UART0: TX IO4, RX IO5).
+// Channel 1 is UART1 (TX IO0, RX IO1).
+// Configuring a channel resets only that channel's receive buffer and faults.
+table UartChannelConfiguration {
+  channel:uint8; // Channel number, must be < StatusResponse.uart_channel_count.
+  enable:bool=true; // false releases the channel and its pins (not allowed for channel 0).
+  speed:uint32=115200; // Baud rate.
+  data_bits:uint8=8; // Data bits (5-8).
+  parity:bool=false; // true for even parity, false for no parity.
+  stop_bits:uint8=1; // Stop bits (1 or 2).
+  signal_inversion:bool=false; // Invert TX and RX.
+  tx_enable:bool=false; // Drive TX. false leaves the TX buffer as an input (receive only).
+}
+
 table ConfigurationRequest {
   mode:string; // Name of the mode to configure.
   mode_configuration:ModeConfiguration; // Configuration for the mode.
@@ -88,6 +104,7 @@ table ConfigurationRequest {
   hardware_bootloader:bool; // Enter bootloader mode.
   hardware_reset:bool; // Hardware reset the device.
   hardware_selftest:bool; // Perform a self-test on the device.
+  uart_channels:[UartChannelConfiguration]; // NEW in 2.3: applied after mode, in order. Requires UART mode.
 }
 
 table ConfigurationResponse{
@@ -121,12 +138,14 @@ table DataRequest {
   stop_main:bool; // Stop condition.
   stop_alt:bool; // Alternate stop condition.
   //bitwise_ops:[ubyte]; // NEW in 2.2: Bitwise pin operations (2wire/3wire only) - array of BitwiseOps values
+  channel:uint8; // NEW in 2.3: UART channel (UART mode only, 0 = legacy UART).
 }
 
 table DataResponse {
   error:string; // Error message if any.
   data_read:[ubyte]; // Data read from device
   is_async:bool = false; // NEW in 2.2: True if this is unsolicited async data
+  channel:uint8; // NEW in 2.3: UART channel the data or error belongs to.
 }
 
 union RequestPacketContents {StatusRequest, ConfigurationRequest, DataRequest}

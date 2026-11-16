@@ -20,6 +20,7 @@
 #include <string.h>
 #include "hardware/uart.h"
 // Modified by OpenAI, 2026: BPIO UART RX lifecycle and fault reporting.
+// Modified by Daniel Schaefer and Claude, 2026: independent BPIO UART channels.
 #include "pico/stdlib.h"
 #include "pirate.h"
 #include "usb_rx.h"
@@ -280,6 +281,7 @@ uint32_t status_request(bpio_RequestPacket_table_t packet, flatcc_builder_t *B, 
         bpio_StatusResponse_mode_max_packet_size_add(B, BPIO_MAX_PACKET_SIZE);
         bpio_StatusResponse_mode_max_write_add(B, BPIO_MAX_WRITE_SIZE);
         bpio_StatusResponse_mode_max_read_add(B, BPIO_MAX_READ_SIZE);
+        bpio_StatusResponse_uart_channel_count_add(B, BPIO_UART_CHANNEL_COUNT);
     }
 
     // led_count
@@ -394,6 +396,16 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
         mode_config_data.tx_modulation = bpio_ModeConfiguration_tx_modulation_get(mode_config);
         mode_config_data.rx_sensor = bpio_ModeConfiguration_rx_sensor_get(mode_config);
         mode_config_data.debug = bpio_debug;
+        // A channel 0 entry in uart_channels decides whether UART mode entry
+        // drives TX at all, so receive-only setup never glitches the line.
+        mode_config_data.uart_tx_disable = false;
+        bpio_UartChannelConfiguration_vec_t pre = bpio_ConfigurationRequest_uart_channels(config_request);
+        for (size_t i = 0; pre && i < bpio_UartChannelConfiguration_vec_len(pre); i++) {
+            bpio_UartChannelConfiguration_table_t ch = bpio_UartChannelConfiguration_vec_at(pre, i);
+            if (bpio_UartChannelConfiguration_channel(ch) == 0) {
+                mode_config_data.uart_tx_disable = !bpio_UartChannelConfiguration_tx_enable(ch);
+            }
+        }
         
         if (mode_change_new(mode_str, &mode_config_data)) {
             static const char *mode_error_msg = "Invalid mode name";
@@ -403,6 +415,31 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
         }
         //todo: configure mode
         if(bpio_debug) printf("[Config Request] Mode changed to '%s'\r\n", mode_str);
+    }
+
+    bpio_UartChannelConfiguration_vec_t uart_channels = bpio_ConfigurationRequest_uart_channels(config_request);
+    if (uart_channels) {
+        if (system_config.mode != HWUART) {
+            static const char *uart_mode_error_msg = "UART channels require UART mode";
+            error = uart_mode_error_msg;
+            goto config_response_error;
+        }
+        for (size_t i = 0; i < bpio_UartChannelConfiguration_vec_len(uart_channels); i++) {
+            bpio_UartChannelConfiguration_table_t ch = bpio_UartChannelConfiguration_vec_at(uart_channels, i);
+            uint8_t channel = bpio_UartChannelConfiguration_channel(ch);
+            bpio_uart_channel_config_t cfg = {
+                .enable = bpio_UartChannelConfiguration_enable(ch),
+                .speed = bpio_UartChannelConfiguration_speed(ch),
+                .data_bits = bpio_UartChannelConfiguration_data_bits(ch),
+                .parity = bpio_UartChannelConfiguration_parity(ch),
+                .stop_bits = bpio_UartChannelConfiguration_stop_bits(ch),
+                .invert = bpio_UartChannelConfiguration_signal_inversion(ch),
+                .tx_enable = bpio_UartChannelConfiguration_tx_enable(ch),
+            };
+            if(bpio_debug) printf("[Config Request] UART channel %d: enable=%d %lu baud tx=%d\r\n", channel, cfg.enable, (unsigned long)cfg.speed, cfg.tx_enable);
+            error = bpio_hwuart_channel_configure(channel, &cfg);
+            if (error) goto config_response_error;
+        }
     }
 
     bool bit_order_msb = bpio_ConfigurationRequest_mode_bitorder_msb_get(config_request);
@@ -485,6 +522,13 @@ uint32_t configuration_request(bpio_RequestPacket_table_t packet, flatcc_builder
     #endif
 
     //TODO: this needs to respect any in-use pins (check system_config?)
+    if (system_config.mode == HWUART &&
+        bpio_hwuart_channel_pins_claimed(bpio_ConfigurationRequest_io_direction_mask_get(config_request) |
+                                         bpio_ConfigurationRequest_io_value_mask_get(config_request))) {
+        static const char *io_claimed_error_msg = "IO pin is used by an active UART channel";
+        error = io_claimed_error_msg;
+        goto config_response_error;
+    }
     if(bpio_ConfigurationRequest_io_direction_mask_is_present(config_request)){
         uint8_t io_direction_mask = bpio_ConfigurationRequest_io_direction_mask_get(config_request);
         uint8_t io_direction = bpio_ConfigurationRequest_io_direction_get(config_request);
@@ -631,6 +675,14 @@ uint32_t data_request(bpio_RequestPacket_table_t packet, flatcc_builder_t *B, ui
     };
 
     size_t data_buf_size = request.bytes_read;
+    uint8_t channel = bpio_DataRequest_channel(data_request);
+
+    if (channel != 0 && system_config.mode != HWUART) {
+        static const char *channel_error_msg = "Data channel requires UART mode";
+        error = channel_error_msg;
+        bpio_DataResponse_start(B);
+        goto data_response_error;
+    }
 
     if(system_config.mode == HWSPI && request.start_alt){
         data_buf_size = request.bytes_write + request.bytes_read;
@@ -640,6 +692,7 @@ uint32_t data_request(bpio_RequestPacket_table_t packet, flatcc_builder_t *B, ui
         static const char *data_read_error_msg = "Data read size too large";
         if(bpio_debug) printf("[Data Request] Error: %s (%d bytes)\r\n", data_read_error_msg, data_buf_size);
         error = data_read_error_msg;
+        bpio_DataResponse_start(B);
         goto data_response_error;
     }
 
@@ -668,11 +721,12 @@ uint32_t data_request(bpio_RequestPacket_table_t packet, flatcc_builder_t *B, ui
         if(bpio_debug) printf("[Data Request] Error: %s\r\n", no_handler_error_msg);
         error = no_handler_error_msg;
     }
-    else if(bpio_handler(&request, data_write, data_read)){
+    else if(system_config.mode == HWUART ? bpio_hwuart_channel_transaction(channel, &request, data_write, data_read)
+                                          : bpio_handler(&request, data_write, data_read)){
         bpio_DataResponse_data_read_truncate(B, 0); 
         static const char* request_error_msg = "Protocol request failed";
         if(bpio_debug) printf("[Data Request] %s\r\n", request_error_msg);
-        error = (system_config.mode == HWUART) ? bpio_hwuart_rx_error() : NULL;
+        error = (system_config.mode == HWUART) ? bpio_hwuart_transaction_error(channel, &request) : NULL;
         if (!error) error = request_error_msg;
     }
     bpio_DataResponse_data_read_end(B); // End the data read vector
@@ -689,6 +743,7 @@ data_response_error:
         if(bpio_debug) printf("[Data Request] Error: %s\r\n", error);
     }
 
+    if (channel) bpio_DataResponse_channel_add(B, channel);
     bpio_DataResponse_ref_t data_response = bpio_DataResponse_end(B);
     // add to packet wrapper
     bpio_ResponsePacket_start_as_root(B);
@@ -719,11 +774,13 @@ void bpio_check_async_data(flatcc_builder_t *B, uint8_t *buf) {
     // Allocate buffer for async data
     uint8_t async_data[BPIO_MAX_READ_SIZE];
     
-    // Call mode's async handler to check for data
-    uint32_t bytes_read = bpio_mode_handlers[system_config.mode].bpio_async_handler(async_data);
-    
-    const char *uart_error = (system_config.mode == HWUART) ? bpio_hwuart_rx_async_error() : NULL;
-    if (uart_error) bytes_read = 0;
+    // Call mode's async handler to check for data. UART serves its channels
+    // round-robin, one channel per packet.
+    uint8_t channel = 0;
+    const char *uart_error = NULL;
+    uint32_t bytes_read = (system_config.mode == HWUART)
+                              ? bpio_hwuart_async_next(async_data, &channel, &uart_error)
+                              : bpio_mode_handlers[system_config.mode].bpio_async_handler(async_data);
     if(bytes_read == 0 && !uart_error) {
         return; // No async data available
     }
@@ -754,6 +811,7 @@ void bpio_check_async_data(flatcc_builder_t *B, uint8_t *buf) {
 
     // Mark as async (unsolicited) data
     bpio_DataResponse_is_async_add(B, true);
+    if (channel) bpio_DataResponse_channel_add(B, channel);
     
     bpio_DataResponse_ref_t data_response = bpio_DataResponse_end(B);
     
@@ -882,7 +940,7 @@ bpio_mode_read_end:
     }
 
     uint16_t minimum_version_minor = bpio_RequestPacket_minimum_version_minor_get(packet);
-    if(minimum_version_minor > 2) {
+    if(minimum_version_minor > 3) {
         if(bpio_debug) printf("[BPIO] Warning: Minimum version minor %d, this may not be compatible\r\n", minimum_version_minor);
         error_response("Flatbuffers minimum version minor not met, update the Bus Pirate firmware", B, buf);
         return;
